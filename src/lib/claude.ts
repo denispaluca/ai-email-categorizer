@@ -23,7 +23,7 @@ export async function categorizeAndSummarizeEmail(
   categories: Category[]
 ): Promise<{ categoryId: string | null; summary: string }> {
   const categoryList = categories
-    .map((c) => `- "${c.name}" (ID: ${c.id}): ${c.description}`)
+    .map((c) => `- ${c.id}, ${c.name}, ${c.description}`)
     .join("\n");
 
   const prompt = `You are an email assistant. Analyze this email and:
@@ -31,6 +31,7 @@ export async function categorizeAndSummarizeEmail(
 2. Provide a brief 1-2 sentence summary
 
 Available categories:
+ID, Name, Description
 ${categoryList}
 
 Email details:
@@ -49,7 +50,7 @@ If no category fits, use null for categoryId.`;
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 300,
       messages: [
         {
@@ -60,6 +61,7 @@ If no category fits, use null for categoryId.`;
     });
 
     const content = response.content[0];
+    console.log('claude response:', content);
     if (content.type === "text") {
       // Try to extract JSON from the response
       const jsonMatch = content.text.match(/\{[\s\S]*\}/);

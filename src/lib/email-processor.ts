@@ -110,13 +110,12 @@ export async function processSpecificEmails(
 
   let processedCount = 0;
 
-
   // Check if already processed
   const existingEmails = await db.select({gmailId: emails.gmailId}).from(emails).where(
       and(eq(emails.gmailAccountId, gmailAccountId),inArray(emails.gmailId, messageIds))
     );
 
-  const nonExistingMessageIds = messageIds.filter(id => existingEmails.some(e => e.gmailId === id));
+  const nonExistingMessageIds = messageIds.filter(id => existingEmails.every(e => e.gmailId !== id));
   for (const messageId of nonExistingMessageIds) {
     try {
       // Check if already processed
