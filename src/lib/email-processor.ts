@@ -11,11 +11,9 @@ import { categorizeAndSummarizeEmail } from "./claude";
 
 export async function processNewEmails(userId: string) {
   // Get all Gmail accounts for this user
-  const userGmailAccounts = (
-    await db.query.gmailAccounts.findMany({
-      where: eq(gmailAccounts.userId, userId),
-    })
-  ).slice(0, 1);
+  const userGmailAccounts = await db.query.gmailAccounts.findMany({
+    where: eq(gmailAccounts.userId, userId),
+  });
 
   // Get all categories for this user
   const userCategories = await db.query.categories.findMany({

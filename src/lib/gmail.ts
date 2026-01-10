@@ -3,11 +3,6 @@ import { db } from "./db";
 import { gmailAccounts } from "./db/schema";
 import { eq } from "drizzle-orm";
 
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-);
-
 export interface EmailMessage {
   id: string;
   threadId: string;
@@ -23,18 +18,15 @@ export interface EmailMessage {
   labelIds: string[];
 }
 
-export async function getGmailClient(gmailAccountId: string) {
-  const account = await db.query.gmailAccounts.findFirst({
-    where: eq(gmailAccounts.id, gmailAccountId),
-  });
-
-  if (!account) {
-    throw new Error("Gmail account not found");
-  }
+function createOAuth2Client(gmailAccountId: string, accessToken: string, refreshToken: string) {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+  );
 
   oauth2Client.setCredentials({
-    access_token: account.accessToken,
-    refresh_token: account.refreshToken,
+    access_token: accessToken,
+    refresh_token: refreshToken,
   });
 
   // Handle token refresh
@@ -51,6 +43,24 @@ export async function getGmailClient(gmailAccountId: string) {
         .where(eq(gmailAccounts.id, gmailAccountId));
     }
   });
+
+  return oauth2Client;
+}
+
+export async function getGmailClient(gmailAccountId: string) {
+  const account = await db.query.gmailAccounts.findFirst({
+    where: eq(gmailAccounts.id, gmailAccountId),
+  });
+
+  if (!account) {
+    throw new Error("Gmail account not found");
+  }
+
+  const oauth2Client = createOAuth2Client(
+    gmailAccountId,
+    account.accessToken,
+    account.refreshToken,
+  );
 
   return google.gmail({ version: "v1", auth: oauth2Client });
 }
