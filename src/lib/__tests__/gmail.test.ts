@@ -115,6 +115,62 @@ describe('Gmail Service', () => {
       const result = extractUnsubscribeLink(html, text);
       expect(result).toBe('https://marketing.example.com/unsubscribe?email=user%40test.com&token=xyz&campaign=123');
     });
+
+    it('should extract link when only the link TEXT says unsubscribe (not the URL)', () => {
+      const html = '<a href="https://click.example.com/abc123def456">Unsubscribe</a>';
+      const text = '';
+
+      const result = extractUnsubscribeLink(html, text);
+      expect(result).toBe('https://click.example.com/abc123def456');
+    });
+
+    it('should extract link with "opt out" text (with space)', () => {
+      const html = '<a href="https://mail.example.com/track/click?id=xyz">Opt Out</a>';
+      const text = '';
+
+      const result = extractUnsubscribeLink(html, text);
+      expect(result).toBe('https://mail.example.com/track/click?id=xyz');
+    });
+
+    it('should extract link with "manage preferences" text', () => {
+      const html = '<a href="https://example.com/settings/abc">Manage Preferences</a>';
+      const text = '';
+
+      const result = extractUnsubscribeLink(html, text);
+      expect(result).toBe('https://example.com/settings/abc');
+    });
+
+    it('should extract link with "manage subscription" text', () => {
+      const html = '<a href="https://example.com/user/config">Manage Subscription</a>';
+      const text = '';
+
+      const result = extractUnsubscribeLink(html, text);
+      expect(result).toBe('https://example.com/user/config');
+    });
+
+    it('should not extract mailto links even if text says unsubscribe', () => {
+      const html = '<a href="mailto:unsubscribe@example.com">Unsubscribe</a>';
+      const text = '';
+
+      const result = extractUnsubscribeLink(html, text);
+      expect(result).toBeNull();
+    });
+
+    it('should find URL near unsubscribe word in plain text', () => {
+      const html = '<p>No links here</p>';
+      const text = 'If you wish to unsubscribe, click here: https://example.com/remove/abc123';
+
+      const result = extractUnsubscribeLink(html, text);
+      expect(result).toBe('https://example.com/remove/abc123');
+    });
+
+    it('should handle email-preferences URL keyword', () => {
+      const html = '<a href="https://example.com/email-preferences?user=123">Update preferences</a>';
+      const text = '';
+
+      const result = extractUnsubscribeLink(html, text);
+      expect(result).toBe('https://example.com/email-preferences?user=123');
+    });
   });
 });
 

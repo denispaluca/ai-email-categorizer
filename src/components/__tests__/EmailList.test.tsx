@@ -293,7 +293,20 @@ describe('EmailList Component', () => {
       const user = userEvent.setup();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ processed: 2, unsubscribed: 1 }),
+        json: async () => ({
+          success: true,
+          processed: 2,
+          linksFound: 1,
+          successCount: 1,
+          failedCount: 0,
+          results: [
+            {
+              url: 'https://example.com/unsubscribe',
+              success: true,
+              message: 'Successfully unsubscribed',
+            },
+          ],
+        }),
       });
 
       render(<EmailList {...defaultProps} />);
@@ -321,7 +334,14 @@ describe('EmailList Component', () => {
 
       (global.fetch as jest.Mock).mockImplementationOnce(() => promise.then(() => ({
         ok: true,
-        json: async () => ({ processed: 1, unsubscribed: 1 }),
+        json: async () => ({
+          success: true,
+          processed: 1,
+          linksFound: 1,
+          successCount: 1,
+          failedCount: 0,
+          results: [],
+        }),
       })));
 
       render(<EmailList {...defaultProps} />);
@@ -334,6 +354,41 @@ describe('EmailList Component', () => {
       expect(screen.getByText('Processing...')).toBeInTheDocument();
 
       resolvePromise!();
+    });
+
+    it('should show results modal after unsubscribe completes', async () => {
+      const user = userEvent.setup();
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          processed: 2,
+          linksFound: 1,
+          successCount: 1,
+          failedCount: 0,
+          results: [
+            {
+              url: 'https://example.com/unsubscribe',
+              success: true,
+              message: 'Successfully unsubscribed',
+            },
+          ],
+        }),
+      });
+
+      render(<EmailList {...defaultProps} />);
+
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+
+      await user.click(screen.getByText('Unsubscribe'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Unsubscribe Results')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/1 unsubscribe links found/)).toBeInTheDocument();
+      expect(screen.getByText('1 successful')).toBeInTheDocument();
     });
   });
 

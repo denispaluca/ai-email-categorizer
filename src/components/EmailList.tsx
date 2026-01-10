@@ -21,12 +21,30 @@ interface EmailListProps {
   categoryColor: string;
 }
 
+interface UnsubscribeResult {
+  url: string;
+  success: boolean;
+  message: string;
+}
+
+interface UnsubscribeResponse {
+  success: boolean;
+  processed: number;
+  linksFound: number;
+  successCount?: number;
+  failedCount?: number;
+  results: UnsubscribeResult[];
+  message?: string;
+}
+
 export function EmailList({ emails, categoryColor }: EmailListProps) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUnsubscribing, setIsUnsubscribing] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
+  const [unsubscribeResults, setUnsubscribeResults] =
+    useState<UnsubscribeResponse | null>(null);
 
   const allSelected = selectedIds.size === emails.length && emails.length > 0;
   const someSelected = selectedIds.size > 0;
@@ -78,6 +96,7 @@ export function EmailList({ emails, categoryColor }: EmailListProps) {
     if (selectedIds.size === 0) return;
 
     setIsUnsubscribing(true);
+    setUnsubscribeResults(null);
     try {
       const response = await fetch("/api/emails/bulk-unsubscribe", {
         method: "POST",
@@ -89,10 +108,9 @@ export function EmailList({ emails, categoryColor }: EmailListProps) {
         throw new Error("Failed to unsubscribe");
       }
 
-      const result = await response.json();
-      alert(
-        `Processed ${result.processed} emails. ${result.unsubscribed} unsubscribe links found and opened.`
-      );
+      const result: UnsubscribeResponse = await response.json();
+      setUnsubscribeResults(result);
+      setSelectedIds(new Set());
     } catch (error) {
       console.error("Error unsubscribing:", error);
       alert("Failed to process unsubscribe requests.");
@@ -250,6 +268,136 @@ export function EmailList({ emails, categoryColor }: EmailListProps) {
           email={selectedEmail}
           onClose={() => setSelectedEmail(null)}
         />
+      )}
+
+      {/* Unsubscribe Results Modal */}
+      {unsubscribeResults && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 max-h-[80vh] w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-200 p-4 dark:border-slate-700">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                Unsubscribe Results
+              </h2>
+              <button
+                onClick={() => setUnsubscribeResults(null)}
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+              >
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto p-4">
+              <div className="mb-4 rounded-lg bg-slate-100 p-3 dark:bg-slate-700">
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Processed {unsubscribeResults.processed} emails,{" "}
+                  {unsubscribeResults.linksFound} unsubscribe links found
+                </p>
+                {unsubscribeResults.linksFound > 0 && (
+                  <p className="mt-1 text-sm">
+                    <span className="font-medium text-green-600 dark:text-green-400">
+                      {unsubscribeResults.successCount} successful
+                    </span>
+                    {unsubscribeResults.failedCount &&
+                      unsubscribeResults.failedCount > 0 && (
+                        <span className="ml-2 font-medium text-red-600 dark:text-red-400">
+                          {unsubscribeResults.failedCount} failed
+                        </span>
+                      )}
+                  </p>
+                )}
+              </div>
+
+              {unsubscribeResults.message && (
+                <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+                  {unsubscribeResults.message}
+                </p>
+              )}
+
+              {unsubscribeResults.results.length > 0 && (
+                <div className="space-y-3">
+                  {unsubscribeResults.results.map((result, index) => (
+                    <div
+                      key={index}
+                      className={`rounded-lg border p-3 ${
+                        result.success
+                          ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                          : "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {result.success ? (
+                          <svg
+                            className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600 dark:text-green-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
+                        ) : (
+                          <svg
+                            className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600 dark:text-red-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className={`text-sm font-medium ${
+                              result.success
+                                ? "text-green-800 dark:text-green-200"
+                                : "text-red-800 dark:text-red-200"
+                            }`}
+                          >
+                            {result.success ? "Unsubscribed" : "Failed"}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                            {result.url}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                            {result.message}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="border-t border-slate-200 p-4 dark:border-slate-700">
+              <button
+                onClick={() => setUnsubscribeResults(null)}
+                className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

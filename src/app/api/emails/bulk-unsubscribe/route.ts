@@ -4,7 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { emails } from "@/lib/db/schema";
 import { inArray } from "drizzle-orm";
-import { extractUnsubscribeLink } from "@/lib/gmail";
+import { findUnsubscribeLink } from "@/lib/gmail";
+import { processUnsubscribeLinks } from "@/lib/unsubscribe-agent";
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -36,25 +37,50 @@ export async function POST(request: NextRequest) {
     (e) => e.gmailAccount.userId === session.user.id
   );
 
-  const unsubscribeLinks: string[] = [];
-
-  for (const email of ownedEmails) {
-    const link = extractUnsubscribeLink(
+  // Extract unsubscribe links using both programmatic and AI methods
+  const linkPromises = ownedEmails.map(async (email) => {
+    const link = await findUnsubscribeLink(
       email.bodyHtml || "",
-      email.bodyText || ""
+      email.bodyText || "",
+      email.subject || "",
+      email.fromAddress || ""
     );
-    if (link) {
-      unsubscribeLinks.push(link);
-    }
-  }
+    return link;
+  });
+
+  const links = await Promise.all(linkPromises);
+  const unsubscribeLinks = links.filter((link): link is string => link !== null);
 
   // Remove duplicates
   const uniqueLinks = [...new Set(unsubscribeLinks)];
 
+  if (uniqueLinks.length === 0) {
+    return NextResponse.json({
+      success: true,
+      processed: ownedEmails.length,
+      linksFound: 0,
+      results: [],
+      message: "No unsubscribe links found in selected emails",
+    });
+  }
+
+  // Run the AI agent to actually unsubscribe
+  console.log(`Processing ${uniqueLinks.length} unsubscribe links...`);
+  const results = await processUnsubscribeLinks(uniqueLinks);
+
+  const successCount = results.filter((r) => r.success).length;
+  const failedCount = results.filter((r) => !r.success).length;
+
   return NextResponse.json({
     success: true,
     processed: ownedEmails.length,
-    unsubscribed: uniqueLinks.length,
-    links: uniqueLinks,
+    linksFound: uniqueLinks.length,
+    successCount,
+    failedCount,
+    results: results.map((r) => ({
+      url: r.url,
+      success: r.success,
+      message: r.message,
+    })),
   });
 }
