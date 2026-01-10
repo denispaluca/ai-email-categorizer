@@ -42,24 +42,24 @@ jest.mock('next-auth/react', () => ({
   getSession: jest.fn(),
 }));
 
-// Suppress console errors during tests (optional - can be removed if you want to see them)
+// Suppress console output during tests to keep test output clean
 const originalError = console.error;
+const originalLog = console.log;
+const originalWarn = console.warn;
+
 beforeAll(() => {
-  console.error = (...args) => {
-    if (
-      typeof args[0] === 'string' &&
-      (args[0].includes('Warning: ReactDOM.render is no longer supported') ||
-        args[0].includes('Warning: An update to') ||
-        args[0].includes('act(...)'))
-    ) {
-      return;
-    }
-    originalError.call(console, ...args);
-  };
+  // Suppress all console.error calls during tests
+  console.error = jest.fn();
+  // Suppress all console.log calls during tests
+  console.log = jest.fn();
+  // Suppress all console.warn calls during tests
+  console.warn = jest.fn();
 });
 
 afterAll(() => {
   console.error = originalError;
+  console.log = originalLog;
+  console.warn = originalWarn;
 });
 
 // Reset mocks after each test

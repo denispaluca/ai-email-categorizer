@@ -3,7 +3,6 @@ import { emails, categories, gmailAccounts } from "./db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import {
   archiveEmail,
-  EmailMessage,
   getEmailContent,
   getHistoryChanges,
 } from "./gmail";
