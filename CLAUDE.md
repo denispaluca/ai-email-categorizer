@@ -63,6 +63,7 @@ src/
 ## Environment Variables
 
 Required in `.env.local`:
+
 ```
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=<random-secret>
@@ -79,7 +80,9 @@ GOOGLE_CLOUD_PROJECT_ID=<project-id>
 3. Add test users in OAuth consent screen
 4. Create Pub/Sub topic `gmail-notifications`
 5. Grant `gmail-api-push@system.gserviceaccount.com` Publisher role on topic
-6. Create push subscription to `https://<ngrok-url>/api/webhooks/gmail`
+6. Create a service account for Pub/Sub push authentication
+7. Grant `service-{PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com` the `iam.serviceAccountTokenCreator` role on the service account
+8. Create push subscription to `https://<ngrok-url>/api/webhooks/gmail` with authentication enabled using the service account
 
 ## Development with Push Notifications
 
