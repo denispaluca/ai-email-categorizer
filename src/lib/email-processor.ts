@@ -1,7 +1,12 @@
 import { db } from "./db";
 import { emails, categories, gmailAccounts } from "./db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { fetchNewEmails, archiveEmail, EmailMessage, getEmailContent } from "./gmail";
+import {
+  fetchNewEmails,
+  archiveEmail,
+  EmailMessage,
+  getEmailContent,
+} from "./gmail";
 import { categorizeAndSummarizeEmail } from "./claude";
 
 export async function processNewEmails(userId: string): Promise<number> {
@@ -16,10 +21,10 @@ export async function processNewEmails(userId: string): Promise<number> {
   });
 
   // When user has no categories emails will not be processed
-  if(userCategories.length === 0) {
+  if (userCategories.length === 0) {
     return 0;
   }
-  
+
   let processedCount = 0;
 
   for (const account of userGmailAccounts) {
@@ -32,7 +37,7 @@ export async function processNewEmails(userId: string): Promise<number> {
         const existingEmail = await db.query.emails.findFirst({
           where: and(
             eq(emails.gmailAccountId, account.id),
-            eq(emails.gmailId, email.id)
+            eq(emails.gmailId, email.id),
           ),
         });
 
@@ -52,7 +57,7 @@ export async function processNewEmails(userId: string): Promise<number> {
             id: c.id,
             name: c.name,
             description: c.description,
-          }))
+          })),
         );
 
         // Store in database
@@ -79,7 +84,10 @@ export async function processNewEmails(userId: string): Promise<number> {
         processedCount++;
       }
     } catch (error) {
-      console.error(`Error processing emails for account ${account.email}:`, error);
+      console.error(
+        `Error processing emails for account ${account.email}:`,
+        error,
+      );
     }
   }
 
@@ -88,101 +96,92 @@ export async function processNewEmails(userId: string): Promise<number> {
 
 export async function processSpecificEmails(
   gmailAccountId: string,
-  messageIds: string[]
+  messageIds: string[],
+  userId: string,
 ): Promise<number> {
-  const account = await db.query.gmailAccounts.findFirst({
-    where: eq(gmailAccounts.id, gmailAccountId),
-  });
-
-  if (!account) {
-    throw new Error("Gmail account not found");
-  }
-
   // Get categories for this user
   const userCategories = await db.query.categories.findMany({
-    where: eq(categories.userId, account.userId),
+    where: eq(categories.userId, userId),
   });
 
   // When user has no categories emails will not be processed
-  if(userCategories.length === 0) {
+  if (userCategories.length === 0) {
     return 0;
   }
 
-  let processedCount = 0;
-
   // Check if already processed
-  const existingEmails = await db.select({gmailId: emails.gmailId}).from(emails).where(
-      and(eq(emails.gmailAccountId, gmailAccountId),inArray(emails.gmailId, messageIds))
+  const existingEmails = await db
+    .select({ gmailId: emails.gmailId })
+    .from(emails)
+    .where(
+      and(
+        eq(emails.gmailAccountId, gmailAccountId),
+        inArray(emails.gmailId, messageIds),
+      ),
     );
 
-  const nonExistingMessageIds = messageIds.filter(id => existingEmails.every(e => e.gmailId !== id));
-  for (const messageId of nonExistingMessageIds) {
-    try {
-      // Check if already processed
-      const existingEmail = await db.query.emails.findFirst({
-        where: and(
-          eq(emails.gmailAccountId, gmailAccountId),
-          eq(emails.gmailId, messageId)
-        ),
-      });
+  const nonExistingMessageIds = messageIds.filter((id) =>
+    existingEmails.every((e) => e.gmailId !== id),
+  );
 
-      if (existingEmail) {
-        continue;
-      }
+  const processed = await Promise.all(
+    nonExistingMessageIds.map(async (messageId) => {
+      try {
+        // Fetch email content
+        const email = await getEmailContent(gmailAccountId, messageId);
 
-      // Fetch email content
-      const email = await getEmailContent(gmailAccountId, messageId);
+        if (!email) {
+          return false;
+        }
 
-      if (!email) {
-        continue;
-      }
+        // Process with AI
+        const { categoryId, summary } = await categorizeAndSummarizeEmail(
+          {
+            subject: email.subject,
+            from: `${email.from.name} <${email.from.email}>`,
+            snippet: email.snippet,
+            bodyText: email.bodyText,
+          },
+          userCategories.map((c) => ({
+            id: c.id,
+            name: c.name,
+            description: c.description,
+          })),
+        );
 
-      // Process with AI
-      const { categoryId, summary } = await categorizeAndSummarizeEmail(
-        {
+        // Emails that belong to no category will not be processed
+        if (categoryId === null) {
+          return false;
+        }
+
+        // Store in database
+        await db.insert(emails).values({
+          gmailAccountId: gmailAccountId,
+          gmailId: email.id,
+          threadId: email.threadId,
+          categoryId: categoryId,
+          fromAddress: email.from.email,
+          fromName: email.from.name,
           subject: email.subject,
-          from: `${email.from.name} <${email.from.email}>`,
           snippet: email.snippet,
           bodyText: email.bodyText,
-        },
-        userCategories.map((c) => ({
-          id: c.id,
-          name: c.name,
-          description: c.description,
-        }))
-      );
+          bodyHtml: email.bodyHtml,
+          summary: summary,
+          receivedAt: email.receivedAt,
+          isRead: false,
+          isDeleted: false,
+        });
 
-      // Emails that belong to no category will not be processed
-      if(categoryId === null) {
-        continue;
+        // Archive in Gmail
+        await archiveEmail(gmailAccountId, email.id);
+
+        return true;
+      } catch (error) {
+        console.error(`Error processing email ${messageId}:`, error);
+        return false;
       }
+    }),
+  );
 
-      // Store in database
-      await db.insert(emails).values({
-        gmailAccountId: gmailAccountId,
-        gmailId: email.id,
-        threadId: email.threadId,
-        categoryId: categoryId,
-        fromAddress: email.from.email,
-        fromName: email.from.name,
-        subject: email.subject,
-        snippet: email.snippet,
-        bodyText: email.bodyText,
-        bodyHtml: email.bodyHtml,
-        summary: summary,
-        receivedAt: email.receivedAt,
-        isRead: false,
-        isDeleted: false,
-      });
-
-      // Archive in Gmail
-      await archiveEmail(gmailAccountId, email.id);
-
-      processedCount++;
-    } catch (error) {
-      console.error(`Error processing email ${messageId}:`, error);
-    }
-  }
-
-  return processedCount;
+  return processed.filter(Boolean).length;
 }

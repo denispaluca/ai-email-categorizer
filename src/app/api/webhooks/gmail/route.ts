@@ -29,14 +29,21 @@ export async function POST(request: NextRequest) {
 
     console.log("Gmail notification received:", notification);
 
-    const [account] = await db.select({id: gmailAccounts.id, historyId: gmailAccounts.historyId})
+    const [account] = await db
+      .select({
+        id: gmailAccounts.id,
+        historyId: gmailAccounts.historyId,
+        userId: gmailAccounts.userId,
+      })
       .from(gmailAccounts)
       .where(eq(gmailAccounts.email, notification.emailAddress));
 
-
     if (!account) {
       console.warn("No account found for:", notification.emailAddress);
-      return NextResponse.json({ error: `Account for ${notification.emailAddress} Not Found` }, { status: 404 })
+      return NextResponse.json(
+        { error: `Account for ${notification.emailAddress} Not Found` },
+        { status: 404 },
+      );
     }
 
     // Update history ID
@@ -50,14 +57,18 @@ export async function POST(request: NextRequest) {
       try {
         const newMessageIds = await getHistoryChanges(
           account.id,
-          account.historyId
+          account.historyId,
         );
 
         if (newMessageIds.length > 0) {
           console.log(`Processing ${newMessageIds.length} new messages`);
-          await processSpecificEmails(account.id, newMessageIds);
+          await processSpecificEmails(
+            account.id,
+            newMessageIds,
+            account.userId,
+          );
         }
-      } catch(e) {
+      } catch (e) {
         console.error("Error processing Gmail webhook:", e);
       }
     }
