@@ -99,10 +99,12 @@ export const authOptions: NextAuthOptions = {
       }
     },
     // Update tokens on subsequent sign-ins
-    async signIn({ user, account }) {
-      if (account?.provider === "google" && account.access_token) {
+    async signIn({ account, profile }) {
+      // Use profile.email (the email of the Google account being signed in)
+      // not user.email (the main user's email from the users table)
+      if (account?.provider === "google" && account.access_token && profile?.email) {
         const existingGmailAccount = await db.query.gmailAccounts.findFirst({
-          where: eq(gmailAccounts.email, user.email!),
+          where: eq(gmailAccounts.email, profile.email),
         });
 
         if (existingGmailAccount) {
@@ -115,7 +117,7 @@ export const authOptions: NextAuthOptions = {
                 : {}),
               expiresAt: account.expires_at,
             })
-            .where(eq(gmailAccounts.email, user.email!));
+            .where(eq(gmailAccounts.email, profile.email));
         }
       }
     },
