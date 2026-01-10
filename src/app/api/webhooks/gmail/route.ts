@@ -5,6 +5,34 @@ import { eq } from "drizzle-orm";
 import { getHistoryChanges } from "@/lib/gmail";
 import { processSpecificEmails } from "@/lib/email-processor";
 
+// In-memory lock to prevent concurrent processing for the same account
+const processingLocks = new Map<string, Promise<void>>();
+
+async function withAccountLock<T>(
+  accountEmail: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  // Wait for any existing processing to complete
+  const existingLock = processingLocks.get(accountEmail);
+  if (existingLock) {
+    await existingLock;
+  }
+
+  // Create a new lock for this processing
+  let releaseLock: () => void;
+  const lockPromise = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  processingLocks.set(accountEmail, lockPromise);
+
+  try {
+    return await fn();
+  } finally {
+    releaseLock!();
+    processingLocks.delete(accountEmail);
+  }
+}
+
 interface PubSubMessage {
   message: {
     data: string;
@@ -29,51 +57,54 @@ export async function POST(request: NextRequest) {
 
     console.log("Gmail notification received:", notification);
 
-    const [account] = await db
-      .select({
-        id: gmailAccounts.id,
-        historyId: gmailAccounts.historyId,
-        userId: gmailAccounts.userId,
-      })
-      .from(gmailAccounts)
-      .where(eq(gmailAccounts.email, notification.emailAddress));
+    // Use lock to prevent concurrent processing for the same account
+    return await withAccountLock(notification.emailAddress, async () => {
+      const [account] = await db
+        .select({
+          id: gmailAccounts.id,
+          historyId: gmailAccounts.historyId,
+          userId: gmailAccounts.userId,
+        })
+        .from(gmailAccounts)
+        .where(eq(gmailAccounts.email, notification.emailAddress));
 
-    if (!account) {
-      console.warn("No account found for:", notification.emailAddress);
-      return NextResponse.json(
-        { error: `Account for ${notification.emailAddress} Not Found` },
-        { status: 404 },
-      );
-    }
-
-    // Update history ID
-    await db
-      .update(gmailAccounts)
-      .set({ historyId: String(notification.historyId) })
-      .where(eq(gmailAccounts.id, account.id));
-
-    // If we have a history ID, fetch changes since then
-    if (account.historyId) {
-      try {
-        const newMessageIds = await getHistoryChanges(
-          account.id,
-          account.historyId,
+      if (!account) {
+        console.warn("No account found for:", notification.emailAddress);
+        return NextResponse.json(
+          { error: `Account for ${notification.emailAddress} Not Found` },
+          { status: 404 },
         );
-
-        if (newMessageIds.length > 0) {
-          console.log(`Processing ${newMessageIds.length} new messages`);
-          await processSpecificEmails(
-            account.id,
-            newMessageIds,
-            account.userId,
-          );
-        }
-      } catch (e) {
-        console.error("Error processing Gmail webhook:", e);
       }
-    }
 
-    return NextResponse.json({ success: true });
+      // Update history ID
+      await db
+        .update(gmailAccounts)
+        .set({ historyId: String(notification.historyId) })
+        .where(eq(gmailAccounts.id, account.id));
+
+      // If we have a history ID, fetch changes since then
+      if (account.historyId) {
+        try {
+          const newMessageIds = await getHistoryChanges(
+            account.id,
+            account.historyId,
+          );
+
+          if (newMessageIds.length > 0) {
+            console.log(`Processing ${newMessageIds.length} new messages`);
+            await processSpecificEmails(
+              account.id,
+              newMessageIds,
+              account.userId,
+            );
+          }
+        } catch (e) {
+          console.error("Error processing Gmail webhook:", e);
+        }
+      }
+
+      return NextResponse.json({ success: true });
+    });
   } catch (error) {
     console.error("Error processing Gmail webhook:", error);
     // Return 200 to prevent Pub/Sub from retrying
