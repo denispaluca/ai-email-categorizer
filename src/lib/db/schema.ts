@@ -3,18 +3,26 @@ import { relations } from "drizzle-orm";
 
 // Users table (managed by NextAuth)
 export const users = sqliteTable("users", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
   name: text("name"),
   email: text("email").notNull().unique(),
   emailVerified: integer("email_verified", { mode: "timestamp" }),
   image: text("image"),
-  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
 });
 
 // NextAuth accounts table
 export const accounts = sqliteTable("accounts", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   type: text("type").notNull(),
   provider: text("provider").notNull(),
   providerAccountId: text("provider_account_id").notNull(),
@@ -30,47 +38,71 @@ export const accounts = sqliteTable("accounts", {
 // NextAuth sessions table
 export const sessions = sqliteTable("sessions", {
   sessionToken: text("session_token").primaryKey(),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   expires: integer("expires", { mode: "timestamp" }).notNull(),
 });
 
 // NextAuth verification tokens (uses composite key of identifier + token)
-export const verificationTokens = sqliteTable("verification_tokens", {
-  identifier: text("identifier").notNull(),
-  token: text("token").notNull(),
-  expires: integer("expires", { mode: "timestamp" }).notNull(),
-}, (vt) => []);
+export const verificationTokens = sqliteTable(
+  "verification_tokens",
+  {
+    identifier: text("identifier").notNull(),
+    token: text("token").notNull(),
+    expires: integer("expires", { mode: "timestamp" }).notNull(),
+  },
+  (vt) => [],
+);
 
 // Connected Gmail accounts (can be multiple per user)
 export const gmailAccounts = sqliteTable("gmail_accounts", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  email: text("email").notNull(),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  email: text("email").notNull().unique(),
   accessToken: text("access_token").notNull(),
   refreshToken: text("refresh_token").notNull(),
   expiresAt: integer("expires_at"),
   historyId: text("history_id"),
   watchExpiration: integer("watch_expiration", { mode: "timestamp" }),
-  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
 });
 
 // User-defined categories
 export const categories = sqliteTable("categories", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description").notNull(),
   color: text("color").notNull().default("#6366f1"),
-  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
 });
 
 // Imported emails
 export const emails = sqliteTable("emails", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  gmailAccountId: text("gmail_account_id").notNull().references(() => gmailAccounts.id, { onDelete: "cascade" }),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  gmailAccountId: text("gmail_account_id")
+    .notNull()
+    .references(() => gmailAccounts.id, { onDelete: "cascade" }),
   gmailId: text("gmail_id").notNull().unique(),
   threadId: text("thread_id"),
-  categoryId: text("category_id").references(() => categories.id, { onDelete: "set null" }),
+  categoryId: text("category_id").references(() => categories.id, {
+    onDelete: "set null",
+  }),
   fromAddress: text("from_address"),
   fromName: text("from_name"),
   subject: text("subject"),
@@ -79,7 +111,9 @@ export const emails = sqliteTable("emails", {
   bodyHtml: text("body_html"),
   summary: text("summary"),
   receivedAt: integer("received_at", { mode: "timestamp" }),
-  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
   isRead: integer("is_read", { mode: "boolean" }).default(false),
   isDeleted: integer("is_deleted", { mode: "boolean" }).default(false),
 });
@@ -92,13 +126,16 @@ export const usersRelations = relations(users, ({ many }) => ({
   categories: many(categories),
 }));
 
-export const gmailAccountsRelations = relations(gmailAccounts, ({ one, many }) => ({
-  user: one(users, {
-    fields: [gmailAccounts.userId],
-    references: [users.id],
+export const gmailAccountsRelations = relations(
+  gmailAccounts,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [gmailAccounts.userId],
+      references: [users.id],
+    }),
+    emails: many(emails),
   }),
-  emails: many(emails),
-}));
+);
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
   user: one(users, {
