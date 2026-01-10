@@ -2,18 +2,20 @@ import { db } from "./db";
 import { emails, categories, gmailAccounts } from "./db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import {
-  fetchNewEmails,
   archiveEmail,
   EmailMessage,
   getEmailContent,
+  getHistoryChanges,
 } from "./gmail";
 import { categorizeAndSummarizeEmail } from "./claude";
 
-export async function processNewEmails(userId: string): Promise<number> {
+export async function processNewEmails(userId: string) {
   // Get all Gmail accounts for this user
-  const userGmailAccounts = await db.query.gmailAccounts.findMany({
-    where: eq(gmailAccounts.userId, userId),
-  });
+  const userGmailAccounts = (
+    await db.query.gmailAccounts.findMany({
+      where: eq(gmailAccounts.userId, userId),
+    })
+  ).slice(0, 1);
 
   // Get all categories for this user
   const userCategories = await db.query.categories.findMany({
@@ -22,76 +24,36 @@ export async function processNewEmails(userId: string): Promise<number> {
 
   // When user has no categories emails will not be processed
   if (userCategories.length === 0) {
-    return 0;
+    return;
   }
 
-  let processedCount = 0;
+  await Promise.all(
+    userGmailAccounts.map((account) =>
+      withAccountLock(account.email, async () => {
+        if (account.historyId) {
+          try {
+            const newMessageIds = await getHistoryChanges(
+              account.id,
+              account.historyId,
+            );
 
-  for (const account of userGmailAccounts) {
-    try {
-      // Fetch new emails from inbox
-      const newEmails = await fetchNewEmails(account.id, 20);
-
-      for (const email of newEmails) {
-        // Check if email already exists
-        const existingEmail = await db.query.emails.findFirst({
-          where: and(
-            eq(emails.gmailAccountId, account.id),
-            eq(emails.gmailId, email.id),
-          ),
-        });
-
-        if (existingEmail) {
-          continue; // Skip already processed emails
+            if (newMessageIds.length > 0) {
+              console.log(
+                `Processing ${newMessageIds.length} new messages for ${account.email}`,
+              );
+              await processSpecificEmails(
+                account.id,
+                newMessageIds,
+                account.userId,
+              );
+            }
+          } catch (e) {
+            console.error("Error processing new emails:", e);
+          }
         }
-
-        // Process with AI
-        const { categoryId, summary } = await categorizeAndSummarizeEmail(
-          {
-            subject: email.subject,
-            from: `${email.from.name} <${email.from.email}>`,
-            snippet: email.snippet,
-            bodyText: email.bodyText,
-          },
-          userCategories.map((c) => ({
-            id: c.id,
-            name: c.name,
-            description: c.description,
-          })),
-        );
-
-        // Store in database
-        await db.insert(emails).values({
-          gmailAccountId: account.id,
-          gmailId: email.id,
-          threadId: email.threadId,
-          categoryId: categoryId,
-          fromAddress: email.from.email,
-          fromName: email.from.name,
-          subject: email.subject,
-          snippet: email.snippet,
-          bodyText: email.bodyText,
-          bodyHtml: email.bodyHtml,
-          summary: summary,
-          receivedAt: email.receivedAt,
-          isRead: false,
-          isDeleted: false,
-        });
-
-        // Archive in Gmail (remove from inbox)
-        await archiveEmail(account.id, email.id);
-
-        processedCount++;
-      }
-    } catch (error) {
-      console.error(
-        `Error processing emails for account ${account.email}:`,
-        error,
-      );
-    }
-  }
-
-  return processedCount;
+      }),
+    ),
+  );
 }
 
 export async function processSpecificEmails(
@@ -184,4 +146,32 @@ export async function processSpecificEmails(
   );
 
   return processed.filter(Boolean).length;
+}
+
+// In-memory lock to prevent concurrent processing for the same account
+const processingLocks = new Map<string, Promise<void>>();
+
+export async function withAccountLock<T>(
+  accountEmail: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  // Wait for any existing processing to complete
+  const existingLock = processingLocks.get(accountEmail);
+  if (existingLock) {
+    await existingLock;
+  }
+
+  // Create a new lock for this processing
+  let releaseLock: () => void;
+  const lockPromise = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  processingLocks.set(accountEmail, lockPromise);
+
+  try {
+    return await fn();
+  } finally {
+    releaseLock!();
+    processingLocks.delete(accountEmail);
+  }
 }

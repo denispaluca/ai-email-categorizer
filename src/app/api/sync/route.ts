@@ -15,13 +15,13 @@ export async function POST() {
     return NextResponse.json({
       success: true,
       processedCount,
-      message: `Processed ${processedCount} new emails`,
+      message: `Finished processing for ${session.user.email} (id: ${session.user.id})`,
     });
   } catch (error) {
     console.error("Error syncing emails:", error);
     return NextResponse.json(
       { error: "Failed to sync emails" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

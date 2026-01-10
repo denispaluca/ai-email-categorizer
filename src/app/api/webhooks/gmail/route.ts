@@ -3,35 +3,7 @@ import { db } from "@/lib/db";
 import { gmailAccounts } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getHistoryChanges } from "@/lib/gmail";
-import { processSpecificEmails } from "@/lib/email-processor";
-
-// In-memory lock to prevent concurrent processing for the same account
-const processingLocks = new Map<string, Promise<void>>();
-
-async function withAccountLock<T>(
-  accountEmail: string,
-  fn: () => Promise<T>,
-): Promise<T> {
-  // Wait for any existing processing to complete
-  const existingLock = processingLocks.get(accountEmail);
-  if (existingLock) {
-    await existingLock;
-  }
-
-  // Create a new lock for this processing
-  let releaseLock: () => void;
-  const lockPromise = new Promise<void>((resolve) => {
-    releaseLock = resolve;
-  });
-  processingLocks.set(accountEmail, lockPromise);
-
-  try {
-    return await fn();
-  } finally {
-    releaseLock!();
-    processingLocks.delete(accountEmail);
-  }
-}
+import { processSpecificEmails, withAccountLock } from "@/lib/email-processor";
 
 interface PubSubMessage {
   message: {

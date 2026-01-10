@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET
+  process.env.GOOGLE_CLIENT_SECRET,
 );
 
 export interface EmailMessage {
@@ -55,66 +55,6 @@ export async function getGmailClient(gmailAccountId: string) {
   return google.gmail({ version: "v1", auth: oauth2Client });
 }
 
-export async function fetchNewEmails(
-  gmailAccountId: string,
-  maxResults = 10
-): Promise<EmailMessage[]> {
-  const gmail = await getGmailClient(gmailAccountId);
-
-  // Fetch messages from inbox
-  const response = await gmail.users.messages.list({
-    userId: "me",
-    labelIds: ["INBOX"],
-    maxResults,
-  });
-
-  if (!response.data.messages) {
-    return [];
-  }
-
-  const emails: EmailMessage[] = await Promise.all(response.data.messages.map(async message => {
-    const fullMessage = await gmail.users.messages.get({
-      userId: "me",
-      id: message.id!,
-      format: "full",
-    });
-
-    const headers = fullMessage.data.payload?.headers || [];
-    const subject =
-      headers.find((h) => h.name?.toLowerCase() === "subject")?.value ||
-      "(No Subject)";
-    const from =
-      headers.find((h) => h.name?.toLowerCase() === "from")?.value || "";
-    const dateStr =
-      headers.find((h) => h.name?.toLowerCase() === "date")?.value || "";
-
-    // Parse from field
-    const fromMatch = from.match(/^(?:"?([^"]*)"?\s)?<?([^>]+)>?$/);
-    const fromName = fromMatch?.[1] || from.split("@")[0];
-    const fromEmail = fromMatch?.[2] || from;
-
-    // Extract body
-    const { text, html } = extractBody(fullMessage.data.payload);
-
-    return {
-      id: message.id!,
-      threadId: message.threadId!,
-      snippet: fullMessage.data.snippet || "",
-      subject,
-      from: {
-        name: fromName,
-        email: fromEmail,
-      },
-      bodyText: text,
-      bodyHtml: html,
-      receivedAt: new Date(dateStr),
-      labelIds: fullMessage.data.labelIds || [],
-    }
-  }))
-
-  return emails;
-}
-
 function extractBody(payload: any): { text: string; html: string } {
   let text = "";
   let html = "";
@@ -141,7 +81,7 @@ function extractBody(payload: any): { text: string; html: string } {
 
 export async function archiveEmail(
   gmailAccountId: string,
-  messageId: string
+  messageId: string,
 ): Promise<void> {
   const gmail = await getGmailClient(gmailAccountId);
 
@@ -156,7 +96,7 @@ export async function archiveEmail(
 
 export async function deleteEmail(
   gmailAccountId: string,
-  messageId: string
+  messageId: string,
 ): Promise<void> {
   const gmail = await getGmailClient(gmailAccountId);
 
@@ -168,7 +108,7 @@ export async function deleteEmail(
 
 export async function getEmailContent(
   gmailAccountId: string,
-  messageId: string
+  messageId: string,
 ): Promise<EmailMessage | null> {
   const gmail = await getGmailClient(gmailAccountId);
 
@@ -214,7 +154,9 @@ export async function getEmailContent(
   }
 }
 
-export async function setupWatch(gmailAccountId: string): Promise<string | null> {
+export async function setupWatch(
+  gmailAccountId: string,
+): Promise<string | null> {
   const gmail = await getGmailClient(gmailAccountId);
 
   try {
@@ -247,11 +189,14 @@ export async function setupWatch(gmailAccountId: string): Promise<string | null>
 
 export async function getHistoryChanges(
   gmailAccountId: string,
-  startHistoryId: string
+  startHistoryId: string,
 ): Promise<string[]> {
   const gmail = await getGmailClient(gmailAccountId);
 
   try {
+    console.log(
+      `Querying history of ${gmailAccountId} from history ID ${startHistoryId}`,
+    );
     const response = await gmail.users.history.list({
       userId: "me",
       startHistoryId,
@@ -283,15 +228,21 @@ export async function getHistoryChanges(
 
     return messageIds;
   } catch (error) {
-    console.error("Error fetching history:", error);
+    console.error(
+      `Error fetching history of ${gmailAccountId} from history ID ${startHistoryId}`,
+      error,
+    );
     return [];
   }
 }
 
-export function extractUnsubscribeLink(bodyHtml: string, bodyText: string): string | null {
+export function extractUnsubscribeLink(
+  bodyHtml: string,
+  bodyText: string,
+): string | null {
   // Try to find unsubscribe link in HTML
   const htmlMatch = bodyHtml.match(
-    /href=["']([^"']*(?:unsubscribe|opt-out|remove)[^"']*)["']/i
+    /href=["']([^"']*(?:unsubscribe|opt-out|remove)[^"']*)["']/i,
   );
   if (htmlMatch) {
     return htmlMatch[1];
@@ -299,7 +250,7 @@ export function extractUnsubscribeLink(bodyHtml: string, bodyText: string): stri
 
   // Try to find in plain text
   const textMatch = bodyText.match(
-    /(https?:\/\/[^\s]*(?:unsubscribe|opt-out|remove)[^\s]*)/i
+    /(https?:\/\/[^\s]*(?:unsubscribe|opt-out|remove)[^\s]*)/i,
   );
   if (textMatch) {
     return textMatch[1];
