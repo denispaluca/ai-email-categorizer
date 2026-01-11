@@ -330,14 +330,14 @@ async function executeAction(
 export async function processUnsubscribeLinks(
   links: string[],
 ): Promise<UnsubscribeResult[]> {
-  const results: UnsubscribeResult[] = [];
-
-  for (const link of links) {
-    console.log(`Processing unsubscribe link: ${link}`);
-    const result = await runUnsubscribeAgent(link);
-    results.push(result);
-    console.log(`Result for ${link}:`, result.success ? "Success" : "Failed");
-  }
+  const results: UnsubscribeResult[] = await Promise.all(
+    links.map(async (link) => {
+      console.log(`Processing unsubscribe link: ${link}`);
+      const result = await runUnsubscribeAgent(link);
+      console.log(`Result for ${link}:`, result.success ? "Success" : "Failed");
+      return result;
+    }),
+  );
 
   return results;
 }

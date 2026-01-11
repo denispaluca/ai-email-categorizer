@@ -9,6 +9,7 @@ import { SignOutButton } from "@/components/SignOutButton";
 import { ConnectedAccounts } from "@/components/ConnectedAccounts";
 import { CategoryCard } from "@/components/CategoryCard";
 import { SyncButton } from "@/components/SyncButton";
+import { AutoRefresh } from "@/components/AutoRefresh";
 
 export default async function Dashboard() {
   const session = await getServerSession(authOptions);
@@ -28,6 +29,7 @@ export default async function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+      <AutoRefresh interval={10000} />
       <header className="border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <div className="flex items-center gap-3">
@@ -118,6 +120,9 @@ export default async function Dashboard() {
                 <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                   Create categories to start sorting your emails automatically.
                 </p>
+                <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">
+                  Incoming emails will not be processed until you create at least one category.
+                </p>
                 <Link
                   href="/categories/new"
                   className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
@@ -139,11 +144,16 @@ export default async function Dashboard() {
                 </Link>
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {userCategories.map((category) => (
-                  <CategoryCard key={category.id} category={category} />
-                ))}
-              </div>
+              <>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {userCategories.map((category) => (
+                    <CategoryCard key={category.id} category={category} />
+                  ))}
+                </div>
+                <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+                  Emails that cannot be assigned to any category will not be processed.
+                </p>
+              </>
             )}
           </section>
         </div>

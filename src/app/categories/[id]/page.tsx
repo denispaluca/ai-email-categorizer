@@ -7,6 +7,7 @@ import { eq, and, desc } from "drizzle-orm";
 import Link from "next/link";
 import { EmailList } from "@/components/EmailList";
 import { DeleteCategoryButton } from "@/components/DeleteCategoryButton";
+import { AutoRefresh } from "@/components/AutoRefresh";
 
 export default async function CategoryPage({
   params,
@@ -42,6 +43,7 @@ export default async function CategoryPage({
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+      <AutoRefresh interval={10000} />
       <header className="border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <div className="flex items-center gap-4">
