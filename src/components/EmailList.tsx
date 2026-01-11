@@ -19,6 +19,7 @@ interface Email {
 interface EmailListProps {
   emails: Email[];
   categoryColor: string;
+  gmailAccounts: Record<string, string>;
 }
 
 interface UnsubscribeResult {
@@ -37,7 +38,7 @@ interface UnsubscribeResponse {
   message?: string;
 }
 
-export function EmailList({ emails, categoryColor }: EmailListProps) {
+export function EmailList({ emails, categoryColor, gmailAccounts }: EmailListProps) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -253,9 +254,14 @@ export function EmailList({ emails, categoryColor }: EmailListProps) {
                     {email.summary || "No summary available"}
                   </p>
                 </div>
-                <span className="whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
-                  {formatDate(email.receivedAt)}
-                </span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className="whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
+                    {formatDate(email.receivedAt)}
+                  </span>
+                  <span className="whitespace-nowrap text-xs text-slate-400 dark:text-slate-500">
+                    {gmailAccounts[email.gmailAccountId] || "Unknown"}
+                  </span>
+                </div>
               </div>
             </button>
           </div>
@@ -266,6 +272,7 @@ export function EmailList({ emails, categoryColor }: EmailListProps) {
       {selectedEmail && (
         <EmailDetailModal
           email={selectedEmail}
+          gmailAccountEmail={gmailAccounts[selectedEmail.gmailAccountId] || "Unknown"}
           onClose={() => setSelectedEmail(null)}
         />
       )}

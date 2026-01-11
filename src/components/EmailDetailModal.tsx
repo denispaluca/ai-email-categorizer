@@ -27,10 +27,11 @@ interface EmailDetail {
 
 interface EmailDetailModalProps {
   email: Email;
+  gmailAccountEmail: string;
   onClose: () => void;
 }
 
-export function EmailDetailModal({ email, onClose }: EmailDetailModalProps) {
+export function EmailDetailModal({ email, gmailAccountEmail, onClose }: EmailDetailModalProps) {
   const router = useRouter();
   const [emailDetail, setEmailDetail] = useState<EmailDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -80,6 +81,9 @@ export function EmailDetailModal({ email, onClose }: EmailDetailModalProps) {
                   &lt;{email.fromAddress}&gt;
                 </span>
               )}
+            </p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              To: {gmailAccountEmail}
             </p>
             <p className="text-sm text-slate-500 dark:text-slate-400">
               {formatDate(email.receivedAt)}

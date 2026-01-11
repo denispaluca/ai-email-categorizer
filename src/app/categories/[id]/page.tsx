@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { categories, emails } from "@/lib/db/schema";
+import { categories, emails, gmailAccounts } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import Link from "next/link";
 import { EmailList } from "@/components/EmailList";
@@ -32,6 +32,14 @@ export default async function CategoryPage({
   if (!category) {
     notFound();
   }
+
+  // Fetch gmail accounts once for this user
+  const userGmailAccounts = await db.query.gmailAccounts.findMany({
+    where: eq(gmailAccounts.userId, session.user.id),
+  });
+  const gmailAccountsMap = Object.fromEntries(
+    userGmailAccounts.map((acc) => [acc.id, acc.email])
+  );
 
   const categoryEmails = await db.query.emails.findMany({
     where: and(
@@ -140,7 +148,7 @@ export default async function CategoryPage({
             </p>
           </div>
         ) : (
-          <EmailList emails={categoryEmails} categoryColor={category.color} />
+          <EmailList emails={categoryEmails} categoryColor={category.color} gmailAccounts={gmailAccountsMap} />
         )}
       </main>
     </div>
