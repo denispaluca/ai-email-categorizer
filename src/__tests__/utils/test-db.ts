@@ -1,26 +1,28 @@
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/pglite';
+import { PGlite } from '@electric-sql/pglite';
 import * as schema from '@/lib/db/schema';
 
 // Create a test database in memory
-export function createTestDb() {
-  const sqlite = new Database(':memory:');
-  const db = drizzle(sqlite, { schema });
+export async function createTestDb() {
+  const pglite = new PGlite();
+  const db = drizzle(pglite, { schema });
 
   // Create tables
-  sqlite.exec(`
+  await pglite.exec(`
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
     CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       name TEXT,
       email TEXT NOT NULL UNIQUE,
-      email_verified INTEGER,
+      email_verified TIMESTAMP,
       image TEXT,
-      created_at INTEGER
+      created_at TIMESTAMP DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS accounts (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       type TEXT NOT NULL,
       provider TEXT NOT NULL,
       provider_account_id TEXT NOT NULL,
@@ -35,43 +37,43 @@ export function createTestDb() {
 
     CREATE TABLE IF NOT EXISTS sessions (
       session_token TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      expires INTEGER NOT NULL
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires TIMESTAMP NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS verification_tokens (
       identifier TEXT NOT NULL,
       token TEXT NOT NULL,
-      expires INTEGER NOT NULL
+      expires TIMESTAMP NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS gmail_accounts (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       email TEXT NOT NULL UNIQUE,
       access_token TEXT NOT NULL,
       refresh_token TEXT NOT NULL,
       expires_at INTEGER,
       history_id TEXT,
-      watch_expiration INTEGER,
-      created_at INTEGER
+      watch_expiration TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS categories (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       description TEXT NOT NULL,
       color TEXT NOT NULL DEFAULT '#6366f1',
-      created_at INTEGER
+      created_at TIMESTAMP DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS emails (
-      id TEXT PRIMARY KEY,
-      gmail_account_id TEXT NOT NULL REFERENCES gmail_accounts(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      gmail_account_id UUID NOT NULL REFERENCES gmail_accounts(id) ON DELETE CASCADE,
       gmail_id TEXT NOT NULL UNIQUE,
       thread_id TEXT,
-      category_id TEXT REFERENCES categories(id) ON DELETE SET NULL,
+      category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
       from_address TEXT,
       from_name TEXT,
       subject TEXT,
@@ -79,18 +81,20 @@ export function createTestDb() {
       body_text TEXT,
       body_html TEXT,
       summary TEXT,
-      received_at INTEGER,
-      created_at INTEGER,
-      is_read INTEGER DEFAULT 0,
-      is_deleted INTEGER DEFAULT 0
+      received_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW(),
+      is_read BOOLEAN DEFAULT FALSE,
+      is_deleted BOOLEAN DEFAULT FALSE
     );
   `);
 
-  return { db, sqlite };
+  return { db, pglite };
 }
 
+type TestDb = Awaited<ReturnType<typeof createTestDb>>['db'];
+
 // Create test data helpers
-export function createTestUser(db: ReturnType<typeof drizzle>, data?: Partial<typeof schema.users.$inferInsert>) {
+export async function createTestUser(db: TestDb, data?: Partial<typeof schema.users.$inferInsert>) {
   const user = {
     id: crypto.randomUUID(),
     email: `test-${Date.now()}@example.com`,
@@ -99,11 +103,11 @@ export function createTestUser(db: ReturnType<typeof drizzle>, data?: Partial<ty
     ...data,
   };
 
-  db.insert(schema.users).values(user).run();
+  await db.insert(schema.users).values(user);
   return user;
 }
 
-export function createTestGmailAccount(db: ReturnType<typeof drizzle>, userId: string, data?: Partial<typeof schema.gmailAccounts.$inferInsert>) {
+export async function createTestGmailAccount(db: TestDb, userId: string, data?: Partial<typeof schema.gmailAccounts.$inferInsert>) {
   const account = {
     id: crypto.randomUUID(),
     userId,
@@ -115,11 +119,11 @@ export function createTestGmailAccount(db: ReturnType<typeof drizzle>, userId: s
     ...data,
   };
 
-  db.insert(schema.gmailAccounts).values(account).run();
+  await db.insert(schema.gmailAccounts).values(account);
   return account;
 }
 
-export function createTestCategory(db: ReturnType<typeof drizzle>, userId: string, data?: Partial<typeof schema.categories.$inferInsert>) {
+export async function createTestCategory(db: TestDb, userId: string, data?: Partial<typeof schema.categories.$inferInsert>) {
   const category = {
     id: crypto.randomUUID(),
     userId,
@@ -130,11 +134,11 @@ export function createTestCategory(db: ReturnType<typeof drizzle>, userId: strin
     ...data,
   };
 
-  db.insert(schema.categories).values(category).run();
+  await db.insert(schema.categories).values(category);
   return category;
 }
 
-export function createTestEmail(db: ReturnType<typeof drizzle>, gmailAccountId: string, categoryId: string | null, data?: Partial<typeof schema.emails.$inferInsert>) {
+export async function createTestEmail(db: TestDb, gmailAccountId: string, categoryId: string | null, data?: Partial<typeof schema.emails.$inferInsert>) {
   const email = {
     id: crypto.randomUUID(),
     gmailAccountId,
@@ -155,6 +159,6 @@ export function createTestEmail(db: ReturnType<typeof drizzle>, gmailAccountId: 
     ...data,
   };
 
-  db.insert(schema.emails).values(email).run();
+  await db.insert(schema.emails).values(email);
   return email;
 }

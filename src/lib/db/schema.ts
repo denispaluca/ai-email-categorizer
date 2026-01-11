@@ -1,26 +1,27 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  integer,
+  boolean,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // Users table (managed by NextAuth)
-export const users = sqliteTable("users", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
   name: text("name"),
   email: text("email").notNull().unique(),
-  emailVerified: integer("email_verified", { mode: "timestamp" }),
+  emailVerified: timestamp("email_verified"),
   image: text("image"),
-  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
-    () => new Date(),
-  ),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // NextAuth accounts table
-export const accounts = sqliteTable("accounts", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id")
+export const accounts = pgTable("accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   type: text("type").notNull(),
@@ -36,31 +37,25 @@ export const accounts = sqliteTable("accounts", {
 });
 
 // NextAuth sessions table
-export const sessions = sqliteTable("sessions", {
+export const sessions = pgTable("sessions", {
   sessionToken: text("session_token").primaryKey(),
-  userId: text("user_id")
+  userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  expires: integer("expires", { mode: "timestamp" }).notNull(),
+  expires: timestamp("expires").notNull(),
 });
 
-// NextAuth verification tokens (uses composite key of identifier + token)
-export const verificationTokens = sqliteTable(
-  "verification_tokens",
-  {
-    identifier: text("identifier").notNull(),
-    token: text("token").notNull(),
-    expires: integer("expires", { mode: "timestamp" }).notNull(),
-  },
-  (vt) => [],
-);
+// NextAuth verification tokens
+export const verificationTokens = pgTable("verification_tokens", {
+  identifier: text("identifier").notNull(),
+  token: text("token").notNull(),
+  expires: timestamp("expires").notNull(),
+});
 
 // Connected Gmail accounts (can be multiple per user)
-export const gmailAccounts = sqliteTable("gmail_accounts", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id")
+export const gmailAccounts = pgTable("gmail_accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   email: text("email").notNull().unique(),
@@ -68,39 +63,31 @@ export const gmailAccounts = sqliteTable("gmail_accounts", {
   refreshToken: text("refresh_token").notNull(),
   expiresAt: integer("expires_at"),
   historyId: text("history_id"),
-  watchExpiration: integer("watch_expiration", { mode: "timestamp" }),
-  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
-    () => new Date(),
-  ),
+  watchExpiration: timestamp("watch_expiration"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // User-defined categories
-export const categories = sqliteTable("categories", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id")
+export const categories = pgTable("categories", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description").notNull(),
   color: text("color").notNull().default("#6366f1"),
-  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
-    () => new Date(),
-  ),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Imported emails
-export const emails = sqliteTable("emails", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  gmailAccountId: text("gmail_account_id")
+export const emails = pgTable("emails", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gmailAccountId: uuid("gmail_account_id")
     .notNull()
     .references(() => gmailAccounts.id, { onDelete: "cascade" }),
   gmailId: text("gmail_id").notNull().unique(),
   threadId: text("thread_id"),
-  categoryId: text("category_id").references(() => categories.id, {
+  categoryId: uuid("category_id").references(() => categories.id, {
     onDelete: "set null",
   }),
   fromAddress: text("from_address"),
@@ -110,12 +97,10 @@ export const emails = sqliteTable("emails", {
   bodyText: text("body_text"),
   bodyHtml: text("body_html"),
   summary: text("summary"),
-  receivedAt: integer("received_at", { mode: "timestamp" }),
-  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
-    () => new Date(),
-  ),
-  isRead: integer("is_read", { mode: "boolean" }).default(false),
-  isDeleted: integer("is_deleted", { mode: "boolean" }).default(false),
+  receivedAt: timestamp("received_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  isRead: boolean("is_read").default(false),
+  isDeleted: boolean("is_deleted").default(false),
 });
 
 // Relations
