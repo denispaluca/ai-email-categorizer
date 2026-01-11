@@ -56,19 +56,36 @@ export async function runUnsubscribeAgent(
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
       steps.push(`\n--- Iteration ${iteration + 1} ---`);
 
-      // Take a screenshot
-      const screenshot = await page.screenshot({ type: "png" });
-      const screenshotBase64 = screenshot.toString("base64");
-
-      // Get page HTML for context
+      // Get simplified page HTML for text-based analysis
       const pageContent = await page.evaluate(() => {
-        // Get simplified DOM structure
+        // Tags to completely skip - they contain no useful information for the AI
+        const skipTags = new Set([
+          'script', 'style', 'noscript', 'svg', 'path', 'meta', 'link',
+          'head', 'iframe', 'canvas', 'video', 'audio', 'source', 'track',
+          'template', 'slot', 'picture', 'map', 'area'
+        ]);
+
+        // Tags that are containers but don't need to show their own info
+        const containerOnlyTags = new Set([
+          'html', 'body', 'main', 'article', 'section', 'header', 'footer',
+          'nav', 'aside', 'div', 'span', 'ul', 'ol', 'li', 'table', 'tbody',
+          'thead', 'tr', 'td', 'th', 'dl', 'dt', 'dd', 'figure', 'figcaption'
+        ]);
+
         const getSimplifiedDOM = (element: Element, depth = 0): string => {
-          if (depth > 3) return "";
           const tag = element.tagName.toLowerCase();
+
+          // Skip elements that provide no useful info
+          if (skipTags.has(tag)) return "";
+
+          // Skip hidden elements
+          const style = window.getComputedStyle(element);
+          if (style.display === 'none' || style.visibility === 'hidden') return "";
+
+          // Get attributes that matter for interaction
           const id = element.id ? `#${element.id}` : "";
-          const classes = element.className
-            ? `.${element.className.toString().split(" ").join(".")}`
+          const classes = element.className && typeof element.className === 'string'
+            ? `.${element.className.trim().split(/\s+/).slice(0, 3).join(".")}`
             : "";
           const type = element.getAttribute("type")
             ? `[type="${element.getAttribute("type")}"]`
@@ -76,10 +93,48 @@ export async function runUnsubscribeAgent(
           const name = element.getAttribute("name")
             ? `[name="${element.getAttribute("name")}"]`
             : "";
-          const text = element.textContent?.trim().substring(0, 50) || "";
+          const href = element.getAttribute("href")
+            ? `[href="${element.getAttribute("href")?.substring(0, 100)}"]`
+            : "";
+          const value = element.getAttribute("value")
+            ? `[value="${element.getAttribute("value")?.substring(0, 50)}"]`
+            : "";
+          const placeholder = element.getAttribute("placeholder")
+            ? `[placeholder="${element.getAttribute("placeholder")}"]`
+            : "";
+          const role = element.getAttribute("role")
+            ? `[role="${element.getAttribute("role")}"]`
+            : "";
+          const ariaLabel = element.getAttribute("aria-label")
+            ? `[aria-label="${element.getAttribute("aria-label")}"]`
+            : "";
 
-          let result = `${"  ".repeat(depth)}<${tag}${id}${classes}${type}${name}>${text ? ` "${text}"` : ""}\n`;
+          // Get direct text content (not from children)
+          let directText = "";
+          for (const node of element.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE) {
+              const text = node.textContent?.trim();
+              if (text) directText += text + " ";
+            }
+          }
+          directText = directText.trim().substring(0, 100);
 
+          // Build the result
+          let result = "";
+          const indent = "  ".repeat(depth);
+          const attrs = `${id}${classes}${type}${name}${href}${value}${placeholder}${role}${ariaLabel}`;
+
+          // For container-only tags, only show if they have meaningful attributes
+          if (containerOnlyTags.has(tag)) {
+            if (attrs || directText) {
+              result = `${indent}<${tag}${attrs}>${directText ? ` "${directText}"` : ""}\n`;
+            }
+          } else {
+            // For interactive/content elements, always show
+            result = `${indent}<${tag}${attrs}>${directText ? ` "${directText}"` : ""}\n`;
+          }
+
+          // Process children
           for (const child of element.children) {
             result += getSimplifiedDOM(child, depth + 1);
           }
@@ -90,13 +145,24 @@ export async function runUnsubscribeAgent(
         return getSimplifiedDOM(document.body);
       });
 
-      // Ask Claude what to do
-      const action = await analyzePageAndDecideAction(
-        screenshotBase64,
-        pageContent,
-        page.url(),
-        steps,
-      );
+      // First try HTML-based analysis (faster and cheaper)
+      let action = await analyzePageWithHtml(pageContent, page.url(), steps);
+
+      // If HTML-based analysis returns an error, fall back to screenshot-based
+      if (action.type === "error") {
+        steps.push("HTML analysis inconclusive, using screenshot analysis...");
+
+        // Take a screenshot for vision-based fallback
+        const screenshot = await page.screenshot({ type: "png" });
+        const screenshotBase64 = screenshot.toString("base64");
+
+        action = await analyzePageWithScreenshot(
+          screenshotBase64,
+          pageContent,
+          page.url(),
+          steps,
+        );
+      }
 
       steps.push(`AI decided: ${action.description}`);
 
@@ -161,23 +227,7 @@ export async function runUnsubscribeAgent(
   }
 }
 
-async function analyzePageAndDecideAction(
-  screenshotBase64: string,
-  pageContent: string,
-  currentUrl: string,
-  previousSteps: string[],
-): Promise<AgentAction> {
-  const prompt = `You are an AI agent helping a user unsubscribe from email newsletters. You are looking at a webpage screenshot and need to decide what action to take next.
-
-Current URL: ${currentUrl}
-
-Previous steps taken:
-${previousSteps.slice(-10).join("\n")}
-
-Page structure (simplified):
-${pageContent.substring(0, 3000)}
-
-Analyze the screenshot and decide the SINGLE next action to take. Your goal is to complete the unsubscribe process.
+const BASE_PROMPT_INSTRUCTIONS = `You are an AI agent helping a user unsubscribe from email newsletters. Your goal is to complete the unsubscribe process.
 
 Look for:
 1. Unsubscribe buttons or links
@@ -203,6 +253,77 @@ Rules:
 - If you see an email input and the unsubscribe requires email, type a placeholder email
 - If there are multiple unsubscribe options, prefer "unsubscribe from all"
 - Click confirmation checkboxes before submit buttons`;
+
+async function analyzePageWithHtml(
+  simplifiedDom: string,
+  currentUrl: string,
+  previousSteps: string[],
+): Promise<AgentAction> {
+  const prompt = `${BASE_PROMPT_INSTRUCTIONS}
+
+Current URL: ${currentUrl}
+
+Previous steps taken:
+${previousSteps.slice(-10).join("\n")}
+
+Simplified page DOM (showing visible interactive elements with their attributes):
+${simplifiedDom}
+
+Analyze the DOM structure and decide the SINGLE next action to take. The DOM shows:
+- Element tags with id (#), classes (.), and key attributes like [type], [name], [href], [role], [aria-label]
+- Direct text content in quotes
+- Hidden elements and scripts/styles have been removed`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 500,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    });
+
+    const content = response.content[0];
+    if (content.type === "text") {
+      const jsonMatch = content.text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]) as AgentAction;
+      }
+    }
+
+    return {
+      type: "error",
+      description: "Failed to parse AI response",
+    };
+  } catch (error) {
+    console.error("Error analyzing page with HTML:", error);
+    return {
+      type: "error",
+      description: `AI analysis failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+    };
+  }
+}
+
+async function analyzePageWithScreenshot(
+  screenshotBase64: string,
+  simplifiedDom: string,
+  currentUrl: string,
+  previousSteps: string[],
+): Promise<AgentAction> {
+  const prompt = `${BASE_PROMPT_INSTRUCTIONS}
+
+Current URL: ${currentUrl}
+
+Previous steps taken:
+${previousSteps.slice(-10).join("\n")}
+
+Simplified page DOM (for selector reference):
+${simplifiedDom.substring(0, 5000)}
+
+Analyze the screenshot and decide the SINGLE next action to take. Use the DOM structure above to help construct accurate CSS selectors.`;
 
   try {
     const response = await anthropic.messages.create({
@@ -242,7 +363,7 @@ Rules:
       description: "Failed to parse AI response",
     };
   } catch (error) {
-    console.error("Error analyzing page:", error);
+    console.error("Error analyzing page with screenshot:", error);
     return {
       type: "error",
       description: `AI analysis failed: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -331,10 +452,11 @@ export async function processUnsubscribeLinks(
   links: string[],
 ): Promise<UnsubscribeResult[]> {
   const results: UnsubscribeResult[] = await Promise.all(
-    links.map(async (link) => {
-      console.log(`Processing unsubscribe link: ${link}`);
+    links.map(async (link, index) => {
+      const linkStart = performance.now();
+      console.log(`Processing unsubscribe link [${index}]: ${link}`);
       const result = await runUnsubscribeAgent(link);
-      console.log(`Result for ${link}:`, result.success ? "Success" : "Failed");
+      console.log(`[TIMER] processUnsubscribeLinks[${index}]: ${(performance.now() - linkStart).toFixed(2)}ms - ${result.success ? "Success" : "Failed"}`);
       return result;
     }),
   );
