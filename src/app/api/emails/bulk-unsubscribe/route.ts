@@ -43,7 +43,6 @@ export async function POST(request: NextRequest) {
       email.bodyHtml || "",
       email.bodyText || "",
       email.subject || "",
-      email.fromAddress || ""
     );
     return link;
   });
@@ -64,9 +63,12 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Get the user's email from the first owned email's Gmail account
+  const userEmail = ownedEmails[0].gmailAccount.email;
+
   // Run the AI agent to actually unsubscribe
-  console.log(`Processing ${uniqueLinks.length} unsubscribe links...`);
-  const results = await processUnsubscribeLinks(uniqueLinks);
+  console.log(`Processing ${uniqueLinks.length} unsubscribe links for ${userEmail}...`);
+  const results = await processUnsubscribeLinks(uniqueLinks, userEmail);
 
   const successCount = results.filter((r) => r.success).length;
   const failedCount = results.filter((r) => !r.success).length;
